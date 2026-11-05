@@ -28,7 +28,7 @@ try:
                 cdf += p[k]
                 if u <= cdf:
                     result[index] = choices[k]
-            # else: should never get here if choices sum to 1
+                    break
         return result
 
 except ImportError:
@@ -268,6 +268,26 @@ population.
         if dll:
             x_new, _step_alpha, used = work()  # need this line to define new return vectors for dll
             print("large pop time compiled (ms)", timeit(dll_work, number=100))
+
+
+def test_pchoice_keeps_the_first_matching_weight():
+    import numpy as np
+    import pytest
+
+    pytest.importorskip("numba")
+    if not hasattr(pchoice, "py_func"):
+        pytest.skip("numba selector is not active")
+
+    choices = np.array([10.0, 20.0, 30.0])
+    only_first = pchoice(choices, size=300, p=np.array([1.0, 0.0, 0.0]))
+    assert np.all(only_first == 10.0)
+
+    only_middle = pchoice(choices, size=300, p=np.array([0.0, 1.0, 0.0]))
+    assert np.any(only_middle == 20.0)
+    assert np.all(only_middle != 30.0)
+
+    mixed = pchoice(choices, size=1000, p=np.array([0.2, 0.3, 0.5]))
+    assert set(np.unique(mixed).tolist()) == {10.0, 20.0, 30.0}
 
 
 if __name__ == "__main__":
