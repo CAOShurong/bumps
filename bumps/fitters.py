@@ -5,6 +5,7 @@ Interfaces to various optimizers.
 import json
 import sys
 import warnings
+from operator import index
 from time import perf_counter
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
@@ -29,6 +30,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from h5py import Group
     from bumps.dream.state import MCMCDraw
+    from .fitproblem import FitProblem
 
 
 class ConsoleMonitor(monitor.TimedUpdate):
@@ -274,6 +276,16 @@ class FitBase(object):
         steps = options.get("steps", 1) * starts
         return steps
 
+    @classmethod
+    def progress_steps(
+        cls,
+        problem: "FitProblem | None" = None,
+        options: dict[str, Any] | None = None,
+        fit_state: Any = None,
+    ) -> tuple[int, int]:
+        """Return the start and maximum in the step coordinate reported by the monitor."""
+        return 0, cls.max_steps(problem, options)
+
     @staticmethod
     def h5dump(group: "Group", state: Any) -> None:
         """
@@ -363,6 +375,28 @@ class DEFit(FitBase):
     ]
     state = None
 
+    @staticmethod
+    def _step_range(steps: int, fit_state: Any) -> tuple[int, int]:
+        if fit_state is None:
+            return 0, steps
+        try:
+            start = index(fit_state["step"][-1])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError("DE history must contain a non-negative saved step") from exc
+        if start < 0:
+            raise ValueError("DE history must contain a non-negative saved step")
+        return start, start + steps
+
+    @classmethod
+    def progress_steps(
+        cls,
+        problem: "FitProblem | None" = None,
+        options: dict[str, Any] | None = None,
+        fit_state: Any = None,
+    ) -> tuple[int, int]:
+        """Use cumulative steps when resuming from DE history."""
+        return cls._step_range(cls.max_steps(problem, options), fit_state)
+
     def solve(self, monitors: MonitorRunner, mapper=None, **options):
         options = _fill_defaults(options, self.settings)
         from .mystic.optimizer import de
@@ -374,7 +408,7 @@ class DEFit(FitBase):
         else:
             _mapper = lambda p, v: list(map(self.problem.nllf, v))
         resume = self.state is not None
-        steps = options["steps"] + (self.state["step"][-1] if resume else 0)
+        _, steps = self._step_range(options["steps"], self.state)
         strategy = de.DifferentialEvolution(
             npop=options["pop"], CR=options["CR"], F=options["F"], crossover=de.c_bin, mutate=de.rand1u
         )

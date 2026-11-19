@@ -72,6 +72,8 @@ This algorithms can be called from the command line as follows::
 
 Some fitters save the complete state of the fitter on termination so that
 the fit can be resumed.  Use ``--resume`` to resume from DREAM or DE.
+When you resume a DE fit in the webview, the step counter continues from
+the saved step and its maximum includes the newly requested steps.
 
 See :ref:`optimizer-guide` for a description of the available optimizers, and
 :ref:`option-guide` for a description of all the bumps options.

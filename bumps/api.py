@@ -765,15 +765,6 @@ async def start_fit_thread(
         logger.warning(msg)
         await log(msg)
 
-    # Start a new thread worker and give fit problem to the worker.
-    # Clear abort and uncertainty state
-    # state.abort = False
-    # state.fitting.uncertainty_state = None
-    state.fit_abort_event.clear()
-    # TODO: remove this re-creation of the Event object when minimum python is >= 3.10
-    state.fit_complete_event = asyncio.Event()
-    state.fit_complete_event.clear()
-
     # Use shared settings by default, update from any provided options
     shared_settings = state.shared.fitter_settings
     full_options = shared_settings[fitter_id]["settings"].copy()
@@ -784,13 +775,17 @@ async def start_fit_thread(
     # TODO: maybe prefer problem saved in store on resume
     # print(f"start fit thread {resume} {state.fitting.fit_state}")
     fitclass = fit_options.lookup_fitter(fitter_id)
-    max_steps = fitclass.max_steps(fitProblem, full_options)
 
     if resume and state.fitting.method != fitter_id:
         msg = f"Can't resume {fitter_id} from state saved by {state.fitting.method}"
         logger.warning(msg)
         await log(msg)
         resume = False
+    fit_state = state.fitting.fit_state if resume else None
+    start_step, max_steps = fitclass.progress_steps(fitProblem, full_options, fit_state)
+
+    state.fit_abort_event.clear()
+    state.fit_complete_event = asyncio.Event()
     state.reset_fitstate(copy=resume)
     state.fitting.method = fitter_id
     state.fitting.options = full_options
@@ -799,8 +794,7 @@ async def start_fit_thread(
             fitter_id=fitter_id,
             options=full_options,
             num_steps=max_steps,
-            # TODO: step should be length fitting.convergence on resume
-            step=0,
+            step=start_step,
             chisq="",
             value=0,
         )
@@ -1005,7 +999,7 @@ async def get_data_plot(model_indices: Optional[List[int]] = None):
         if fitProblem.num_models > 1:
             chisq_str = fitness_chisq_str(model)
             text = f"χ² = {chisq_str}; overall {overall_chisq_str}"
-            title = f"Model {index+1}: {model.name}"
+            title = f"Model {index + 1}: {model.name}"
         else:
             text = f"χ² = {overall_chisq_str}"
             title = f"{model.name}"
